@@ -1,0 +1,8 @@
+# JitPack build config. AGP 8.7.3 / Java 17 source-compat require JDK 17
+# (JitPack defaults to an older JDK). Build & publish only the library module
+# to the JitPack-local Maven repo — the :demo app needs runtime DEMO_* config
+# and is not part of the distributable artifact.
+jdk:
+  - openjdk17
+install:
+  - ./gradlew :sentinel:publishToMavenLocal

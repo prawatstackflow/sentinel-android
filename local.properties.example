@@ -1,0 +1,19 @@
+# Copy this file to `local.properties` (git-ignored) and fill in the values.
+# Android Studio manages `sdk.dir` for you; the DEMO_* keys power the demo
+# app's "Start Demo Session" button.
+
+# Android SDK location (usually written automatically by Android Studio).
+#sdk.dir=/Users/you/Library/Android/sdk
+
+# Tenant API key used to mint demo sessions (POST /sessions). Mint one in the
+# admin console for the sandbox tenant. DEMO ONLY — never ship an API key in a
+# real client app; keep it server-side.
+DEMO_API_KEY=
+
+# Where to mint the session (no trailing /sessions). Defaults to the local LAN
+# stack. Use https://test-api-identity.finvasia.com for the deployed sandbox.
+DEMO_API_BASE_URL=https://10.10.10.51/api
+
+# Origin of the hosted verification flow loaded in the WebView. Defaults to the
+# local LAN stack. Use https://test-identity.finvasia.com for the deployed env.
+DEMO_HOSTED_FLOW_BASE_URL=https://10.10.10.51

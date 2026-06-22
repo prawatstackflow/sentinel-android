@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      # ubuntu-latest ships the Android SDK with licenses accepted (ANDROID_SDK_ROOT set).
+      - name: Build library, run tests, build demo
+        run: ./gradlew :sentinel:assembleRelease :sentinel:testReleaseUnitTest :demo:assembleDebug --no-daemon --stacktrace

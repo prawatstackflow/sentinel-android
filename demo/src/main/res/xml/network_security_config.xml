@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Demo-only. Lets the WebView trust user-installed CAs (e.g. an mkcert root) so the
+  hosted flow can be loaded from a self-signed LAN dev edge such as https://10.10.10.51.
+  <debug-overrides> applies ONLY to debuggable builds and is stripped from release builds,
+  so this never weakens a shipped APK. No certificate material is committed.
+-->
+<network-security-config>
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="user" />
+            <certificates src="system" />
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>
