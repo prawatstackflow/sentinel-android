@@ -3,8 +3,14 @@
 Native Android SDK for the **Sentinel** identity-verification flow. It hosts the
 deployed web verification runtime in a hardened `WebView` and adds a native
 layer for camera-permission forwarding, document file selection, and a typed
-result callback — so the chat/widget/branding UI stays in sync with web
+status callback — so the chat/widget/branding UI stays in sync with web
 automatically.
+
+The SDK **reports** status; it does not close itself. On every status change it
+invokes your `SentinelListener` and leaves the WebView open; the host decides
+when to tear down via the returned `SentinelSession`. (The system-back gesture is
+the one exception — it emits `Cancelled` and finishes so the user is never
+trapped.)
 
 See [`docs/mobile-sdk-contract.md`](https://github.com/finvasia/sentinel) in the
 platform repo for the cross-platform contract this SDK mirrors.
@@ -30,18 +36,11 @@ Minimum SDK: **24**.
 ```kotlin
 class CheckoutActivity : AppCompatActivity() {
 
-    private val verify = registerForActivityResult(Sentinel.Contract()) { result ->
-        when (result) {
-            SentinelResult.Approved    -> goToSuccess()
-            SentinelResult.Rejected    -> goToRejected()
-            SentinelResult.UnderReview -> goToPending()
-            SentinelResult.Cancelled   -> { /* user dismissed */ }
-            is SentinelResult.Failed   -> showError(result.message)
-        }
-    }
+    private var session: SentinelSession? = null
 
     private fun startVerification(sessionId: String, sessionToken: String) {
-        verify.launch(
+        session = Sentinel.launch(
+            this,
             SentinelConfig(
                 sessionId = sessionId,
                 sessionToken = sessionToken,
@@ -50,7 +49,23 @@ class CheckoutActivity : AppCompatActivity() {
                 // hostedFlowBaseUrl = "https://identity.yourco.com",
                 theme = SentinelTheme.SYSTEM,
             ),
-        )
+        ) { event ->
+            when (event) {
+                SentinelEvent.Ready -> { /* runtime mounted */ }
+                is SentinelEvent.Completed -> {
+                    when (event.outcome) {
+                        SentinelOutcome.APPROVED     -> goToSuccess()
+                        SentinelOutcome.REJECTED     -> goToRejected()
+                        SentinelOutcome.UNDER_REVIEW -> goToPending()
+                        SentinelOutcome.COMPLETED    -> goToDone()
+                    }
+                    session?.dismiss()               // host decides when to close
+                }
+                SentinelEvent.Cancelled     -> session?.dismiss()   // user exited
+                is SentinelEvent.Error      -> { showError(event.message); session?.dismiss() }
+                is SentinelEvent.LoadFailed -> { showError(event.message); session?.dismiss() }
+            }
+        }
     }
 }
 ```
@@ -89,7 +104,9 @@ The `demo/` module is a runnable harness with two ways to start a flow:
 
 - Loads `{hostedFlowBaseUrl}/verification/{sessionId}?token=…&theme=…&platform=native`.
 - Forwards the WebView camera permission request to the OS.
-- Returns a typed [`SentinelResult`]; maps a failed page load to `Failed`.
+- Reports typed `SentinelEvent`s via your `SentinelListener`; maps a failed page
+  load to `LoadFailed`. Never closes itself on a web status — the host dismisses
+  via the returned `SentinelSession`.
 - Keeps navigation within the hosted origin (foreign CTA links open in the
   browser).
 

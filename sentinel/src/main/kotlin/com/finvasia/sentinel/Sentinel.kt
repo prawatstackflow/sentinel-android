@@ -1,37 +1,48 @@
 package com.finvasia.sentinel
 
 import android.content.Context
-import android.content.Intent
-import androidx.activity.result.contract.ActivityResultContract
+import com.finvasia.sentinel.internal.SentinelRuntime
 import com.finvasia.sentinel.internal.VerificationActivity
 
 /**
  * Entry point for the Sentinel identity-verification flow.
  *
- * Register [Contract] with any `ActivityResultCaller` (Activity/Fragment) and
- * launch it with a [SentinelConfig]:
+ * [launch] starts the flow and streams every status change to your
+ * [SentinelListener]. The SDK **does not close itself** when the flow completes,
+ * errors, or the user cancels — it only reports the event. Use the returned
+ * [SentinelSession] to close when the host decides:
  *
  * ```kotlin
- * private val verify = registerForActivityResult(Sentinel.Contract()) { result ->
- *     when (result) {
- *         SentinelResult.Approved    -> /* ... */
- *         SentinelResult.Rejected    -> /* ... */
- *         SentinelResult.UnderReview -> /* ... */
- *         SentinelResult.Cancelled   -> /* ... */
- *         is SentinelResult.Failed   -> showError(result.message)
+ * val session = Sentinel.launch(context, config) { event ->
+ *     when (event) {
+ *         is SentinelEvent.Completed -> { showResult(event.outcome); currentSession?.dismiss() }
+ *         SentinelEvent.Cancelled    -> currentSession?.dismiss()
+ *         is SentinelEvent.Error     -> { showError(event.message); currentSession?.dismiss() }
+ *         is SentinelEvent.LoadFailed -> { showError(event.message); currentSession?.dismiss() }
+ *         SentinelEvent.Ready        -> { /* runtime mounted */ }
  *     }
  * }
- *
- * verify.launch(SentinelConfig(sessionId = "...", sessionToken = "..."))
+ * currentSession = session
  * ```
+ *
+ * The system-back gesture is the one exception: it emits [SentinelEvent.Cancelled]
+ * and finishes, so the user is never trapped.
  */
 object Sentinel {
-    /** [ActivityResultContract] that runs the flow and returns a [SentinelResult]. */
-    class Contract : ActivityResultContract<SentinelConfig, SentinelResult>() {
-        override fun createIntent(context: Context, input: SentinelConfig): Intent =
-            VerificationActivity.intent(context, input)
-
-        override fun parseResult(resultCode: Int, intent: Intent?): SentinelResult =
-            VerificationActivity.parseResult(intent)
+    /**
+     * Launches the verification flow described by [config] and reports status
+     * updates to [listener]. Returns a [SentinelSession] the host uses to close
+     * the flow. Call on the main thread.
+     */
+    fun launch(
+        context: Context,
+        config: SentinelConfig,
+        listener: SentinelListener,
+    ): SentinelSession {
+        SentinelRuntime.setListener(listener)
+        context.startActivity(VerificationActivity.intent(context, config))
+        return object : SentinelSession {
+            override fun dismiss() = SentinelRuntime.requestDismiss()
+        }
     }
 }

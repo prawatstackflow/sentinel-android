@@ -1,7 +1,6 @@
 package com.finvasia.sentinel.internal
 
 import android.Manifest
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -21,20 +20,25 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import com.finvasia.sentinel.SentinelConfig
-import com.finvasia.sentinel.SentinelResult
+import com.finvasia.sentinel.SentinelEvent
+import com.finvasia.sentinel.SentinelOutcome
 import com.finvasia.sentinel.SentinelTheme
 import org.json.JSONObject
 
 /**
  * Internal host activity. Loads the hosted verification runtime in a WebView and
- * bridges its lifecycle/result messages back to a [SentinelResult]. Not part of
- * the public API — launched only via [com.finvasia.sentinel.Sentinel.Contract].
+ * forwards its lifecycle/status messages to the host as [SentinelEvent]s (via
+ * [SentinelRuntime]). Not part of the public API — launched only via
+ * [com.finvasia.sentinel.Sentinel.launch].
  */
 internal class VerificationActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var config: SentinelConfig
-    private var terminalDelivered = false
+
+    // Whether a terminal-ish event (Completed/Error/Cancelled/LoadFailed) has
+    // already been reported, so onDestroy doesn't emit a spurious Cancelled.
+    private var terminalEmitted = false
 
     private var pendingCameraPermissionRequest: PermissionRequest? = null
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
@@ -70,9 +74,14 @@ internal class VerificationActivity : AppCompatActivity() {
         // once targetSdk reaches 35 / Android 15, which forces edge-to-edge.)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
+        SentinelRuntime.bind(this)
+
         val parsed = readConfig(intent)
         if (parsed == null) {
-            finishWith(SentinelResult.Failed("Missing Sentinel configuration"))
+            // Caller error — nothing to render. Report it and close: there is no
+            // WebView to keep open for the host to inspect.
+            emit(SentinelEvent.LoadFailed("Missing Sentinel configuration"))
+            finish()
             return
         }
         config = parsed
@@ -93,25 +102,37 @@ internal class VerificationActivity : AppCompatActivity() {
         webView.loadUrl(buildUrl(config))
 
         onBackPressedDispatcher.addCallback(this) {
-            if (webView.canGoBack()) webView.goBack() else finishWith(SentinelResult.Cancelled)
+            if (webView.canGoBack()) {
+                webView.goBack()
+            } else {
+                // Escape hatch: report cancelled AND finish, so the user is never
+                // trapped even if the host doesn't close on the event.
+                emit(SentinelEvent.Cancelled)
+                finish()
+            }
         }
     }
 
     override fun onDestroy() {
-        // Torn down without a terminal outcome (e.g. system kill) → treat as
-        // cancelled so the host always gets a result.
-        if (!terminalDelivered) {
-            setResult(Activity.RESULT_OK, resultIntent(SentinelResult.Cancelled))
+        // Torn down while finishing without a terminal event (e.g. system kill) →
+        // report cancelled so the host always hears about it. Guarded on
+        // isFinishing so a config-change recreate (rotation) doesn't misfire.
+        if (isFinishing && !terminalEmitted) {
+            emit(SentinelEvent.Cancelled)
         }
-        webView.destroy()
+        SentinelRuntime.unbind(this)
+        if (::webView.isInitialized) webView.destroy()
         super.onDestroy()
     }
 
-    private fun finishWith(result: SentinelResult) {
-        if (terminalDelivered) return
-        terminalDelivered = true
-        setResult(Activity.RESULT_OK, resultIntent(result))
-        finish()
+    /**
+     * Forwards a status update to the host. Never finishes the activity — closing
+     * is the host's decision (via [SentinelSession.dismiss]) or the system-back
+     * escape hatch.
+     */
+    private fun emit(event: SentinelEvent) {
+        if (event !is SentinelEvent.Ready) terminalEmitted = true
+        SentinelRuntime.emit(event)
     }
 
     private fun hasCameraPermission(): Boolean =
@@ -123,20 +144,28 @@ internal class VerificationActivity : AppCompatActivity() {
         fun postMessage(json: String) {
             val message = runCatching { JSONObject(json) }.getOrNull() ?: return
             when (message.optString("type")) {
+                "ready" -> runOnUiThread { emit(SentinelEvent.Ready) }
+
                 "complete" -> {
-                    val result = when (message.optString("outcome")) {
-                        "approved" -> SentinelResult.Approved
-                        "rejected" -> SentinelResult.Rejected
-                        else -> SentinelResult.UnderReview
+                    val outcome = when (message.optString("outcome")) {
+                        "approved" -> SentinelOutcome.APPROVED
+                        "rejected" -> SentinelOutcome.REJECTED
+                        "completed" -> SentinelOutcome.COMPLETED
+                        else -> SentinelOutcome.UNDER_REVIEW
                     }
-                    runOnUiThread { finishWith(result) }
+                    runOnUiThread { emit(SentinelEvent.Completed(outcome)) }
                 }
 
                 "error" -> {
                     val msg = message.optString("message").ifBlank { "Verification error" }
-                    runOnUiThread { finishWith(SentinelResult.Failed(msg)) }
+                    runOnUiThread { emit(SentinelEvent.Error(msg)) }
                 }
-                // "ready" is informational — no action.
+
+                "cancel" -> {
+                    // User confirmed the in-flow "Exit Onboarding" dialog. Report it
+                    // and let the host close — the SDK no longer finishes here.
+                    runOnUiThread { emit(SentinelEvent.Cancelled) }
+                }
             }
         }
     }
@@ -199,7 +228,7 @@ internal class VerificationActivity : AppCompatActivity() {
             error: WebResourceError,
         ) {
             if (request.isForMainFrame) {
-                finishWith(SentinelResult.Failed("Failed to load verification: ${error.description}"))
+                emit(SentinelEvent.LoadFailed("Failed to load verification: ${error.description}"))
             }
         }
     }
@@ -233,9 +262,6 @@ internal class VerificationActivity : AppCompatActivity() {
         private const val EXTRA_THEME = "sentinel.theme"
         private const val EXTRA_LOCALE = "sentinel.locale"
 
-        private const val EXTRA_RESULT_KIND = "sentinel.result.kind"
-        private const val EXTRA_RESULT_MESSAGE = "sentinel.result.message"
-
         fun intent(context: Context, config: SentinelConfig): Intent =
             Intent(context, VerificationActivity::class.java).apply {
                 putExtra(EXTRA_SESSION_ID, config.sessionId)
@@ -244,19 +270,6 @@ internal class VerificationActivity : AppCompatActivity() {
                 putExtra(EXTRA_THEME, config.theme.name)
                 putExtra(EXTRA_LOCALE, config.locale)
             }
-
-        fun parseResult(intent: Intent?): SentinelResult {
-            if (intent == null) return SentinelResult.Cancelled
-            return when (intent.getStringExtra(EXTRA_RESULT_KIND)) {
-                "approved" -> SentinelResult.Approved
-                "rejected" -> SentinelResult.Rejected
-                "under_review" -> SentinelResult.UnderReview
-                "failed" -> SentinelResult.Failed(
-                    intent.getStringExtra(EXTRA_RESULT_MESSAGE) ?: "Verification error",
-                )
-                else -> SentinelResult.Cancelled
-            }
-        }
 
         private fun readConfig(intent: Intent): SentinelConfig? {
             val sessionId = intent.getStringExtra(EXTRA_SESSION_ID) ?: return null
@@ -273,20 +286,6 @@ internal class VerificationActivity : AppCompatActivity() {
                 theme = theme,
                 locale = intent.getStringExtra(EXTRA_LOCALE),
             )
-        }
-
-        private fun resultIntent(result: SentinelResult): Intent {
-            val intent = Intent()
-            val (kind, message) = when (result) {
-                SentinelResult.Approved -> "approved" to null
-                SentinelResult.Rejected -> "rejected" to null
-                SentinelResult.UnderReview -> "under_review" to null
-                SentinelResult.Cancelled -> "cancelled" to null
-                is SentinelResult.Failed -> "failed" to result.message
-            }
-            intent.putExtra(EXTRA_RESULT_KIND, kind)
-            message?.let { intent.putExtra(EXTRA_RESULT_MESSAGE, it) }
-            return intent
         }
     }
 }

@@ -12,7 +12,9 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.finvasia.sentinel.Sentinel
 import com.finvasia.sentinel.SentinelConfig
-import com.finvasia.sentinel.SentinelResult
+import com.finvasia.sentinel.SentinelEvent
+import com.finvasia.sentinel.SentinelOutcome
+import com.finvasia.sentinel.SentinelSession
 
 /**
  * Minimal harness for testing the Sentinel SDK on a device/emulator. Two ways
@@ -28,13 +30,37 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var resultView: TextView
 
-    private val verify = registerForActivityResult(Sentinel.Contract()) { result ->
-        resultView.text = when (result) {
-            SentinelResult.Approved -> "Result: APPROVED"
-            SentinelResult.Rejected -> "Result: REJECTED"
-            SentinelResult.UnderReview -> "Result: UNDER REVIEW"
-            SentinelResult.Cancelled -> "Result: cancelled"
-            is SentinelResult.Failed -> "Result: failed — ${result.message}"
+    // Held so the demo can close the flow when *it* decides — the SDK no longer
+    // self-closes on a status event.
+    private var session: SentinelSession? = null
+
+    private fun launch(config: SentinelConfig) {
+        session = Sentinel.launch(this, config) { event ->
+            when (event) {
+                SentinelEvent.Ready -> resultView.text = "Status: ready"
+                is SentinelEvent.Completed -> {
+                    resultView.text = when (event.outcome) {
+                        SentinelOutcome.APPROVED -> "Result: APPROVED"
+                        SentinelOutcome.REJECTED -> "Result: REJECTED"
+                        SentinelOutcome.UNDER_REVIEW -> "Result: UNDER REVIEW"
+                        SentinelOutcome.COMPLETED -> "Result: COMPLETED"
+                    }
+                    // Demo close policy: host decides to close on a terminal event.
+                    session?.dismiss()
+                }
+                SentinelEvent.Cancelled -> {
+                    resultView.text = "Result: cancelled"
+                    session?.dismiss()
+                }
+                is SentinelEvent.Error -> {
+                    resultView.text = "Result: error — ${event.message}"
+                    session?.dismiss()
+                }
+                is SentinelEvent.LoadFailed -> {
+                    resultView.text = "Result: load failed — ${event.message}"
+                    session?.dismiss()
+                }
+            }
         }
     }
 
@@ -67,7 +93,7 @@ class MainActivity : AppCompatActivity() {
                     onSuccess = { session ->
                         isEnabled = true
                         demoStatus.text = "Session ${session.sessionId.take(8)}… created"
-                        verify.launch(
+                        launch(
                             SentinelConfig(
                                 sessionId = session.sessionId,
                                 sessionToken = session.sessionToken,
@@ -112,7 +138,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 val baseUrl = baseUrlInput.text.toString().trim()
                     .ifEmpty { SentinelConfig.DEFAULT_HOSTED_FLOW_BASE_URL }
-                verify.launch(
+                launch(
                     SentinelConfig(
                         sessionId = sessionId,
                         sessionToken = token,
