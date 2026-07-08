@@ -30,7 +30,7 @@ android {
         minSdk = 24
         targetSdk = 34
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.1.2"
 
         buildConfigField("String", "DEMO_API_KEY", "\"${demoProp("DEMO_API_KEY", "")}\"")
         buildConfigField(

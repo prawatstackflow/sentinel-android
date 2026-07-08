@@ -25,7 +25,7 @@ maven { url = uri("https://jitpack.io") }
 
 // build.gradle.kts
 dependencies {
-    implementation("com.github.prawatstackflow:sentinel-android:0.1.0")
+    implementation("com.github.prawatstackflow:sentinel-android:0.1.2")
 }
 ```
 
