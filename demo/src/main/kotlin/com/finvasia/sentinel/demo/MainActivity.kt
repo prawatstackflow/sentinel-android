@@ -39,13 +39,18 @@ class MainActivity : AppCompatActivity() {
             when (event) {
                 SentinelEvent.Ready -> resultView.text = "Status: ready"
                 is SentinelEvent.Completed -> {
+                    // Show the outcome but DO NOT dismiss — the SDK keeps the WebView
+                    // open on the outcome screen so the user can read it. The host
+                    // dismisses only when the user taps "Done" (Closed), below.
                     resultView.text = when (event.outcome) {
                         SentinelOutcome.APPROVED -> "Result: APPROVED"
                         SentinelOutcome.REJECTED -> "Result: REJECTED"
                         SentinelOutcome.UNDER_REVIEW -> "Result: UNDER REVIEW"
                         SentinelOutcome.COMPLETED -> "Result: COMPLETED"
                     }
-                    // Demo close policy: host decides to close on a terminal event.
+                }
+                SentinelEvent.Closed -> {
+                    // User tapped "Done" on the outcome screen — now close.
                     session?.dismiss()
                 }
                 SentinelEvent.Cancelled -> {

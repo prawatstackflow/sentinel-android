@@ -35,6 +35,15 @@ sealed interface SentinelEvent {
      */
     data object Cancelled : SentinelEvent
 
+    /**
+     * The user tapped "Done" on the terminal outcome screen after the flow
+     * finished. Distinct from [Cancelled] (which means the user abandoned the
+     * flow): here the flow completed and the user acknowledged the outcome. The
+     * host should dismiss on this — the SDK keeps the WebView open on `complete`
+     * so the user can read the outcome, and closes only when they choose to.
+     */
+    data object Closed : SentinelEvent
+
     /** The web runtime reported an unrecoverable error. */
     data class Error(val message: String) : SentinelEvent
 

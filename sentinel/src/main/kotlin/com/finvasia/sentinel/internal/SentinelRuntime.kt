@@ -2,6 +2,7 @@ package com.finvasia.sentinel.internal
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.finvasia.sentinel.SentinelEvent
 import com.finvasia.sentinel.SentinelListener
 import java.lang.ref.WeakReference
@@ -17,6 +18,8 @@ import java.lang.ref.WeakReference
  * teardown to avoid leaks.
  */
 internal object SentinelRuntime {
+    private const val TAG = "Sentinel"
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var listener: SentinelListener? = null
@@ -42,6 +45,7 @@ internal object SentinelRuntime {
 
     /** Forwards an event to the host listener on the main thread. */
     fun emit(event: SentinelEvent) {
+        Log.i(TAG, "event: $event")
         val target = listener ?: return
         if (Looper.myLooper() == Looper.getMainLooper()) {
             target.onEvent(event)

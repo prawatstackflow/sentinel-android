@@ -97,6 +97,13 @@ internal class VerificationActivity : AppCompatActivity() {
             addJavascriptInterface(Bridge(), BRIDGE_NAME)
             webViewClient = RuntimeWebViewClient(Uri.parse(config.hostedFlowBaseUrl))
             webChromeClient = RuntimeChromeClient()
+            // The hosted flow manages its own fields; opting out of platform
+            // autofill (API 26+) avoids the chromium AutofillProvider
+            // NullPointerException (cr_AutofillHintsService onViewTypeAvailable)
+            // some WebView builds throw, and prevents spurious autofill popups.
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            }
         }
         setContentView(webView)
         webView.loadUrl(buildUrl(config))
@@ -165,6 +172,12 @@ internal class VerificationActivity : AppCompatActivity() {
                     // User confirmed the in-flow "Exit Onboarding" dialog. Report it
                     // and let the host close — the SDK no longer finishes here.
                     runOnUiThread { emit(SentinelEvent.Cancelled) }
+                }
+
+                "close" -> {
+                    // User tapped "Done" on the terminal outcome screen. Report it and
+                    // let the host dismiss — distinct from `cancel` (the flow finished).
+                    runOnUiThread { emit(SentinelEvent.Closed) }
                 }
             }
         }
