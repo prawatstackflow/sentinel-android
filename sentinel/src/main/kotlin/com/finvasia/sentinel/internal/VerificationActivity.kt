@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
+import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
@@ -105,6 +106,10 @@ internal class VerificationActivity : AppCompatActivity() {
                 importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
             }
         }
+        // LiveChat renders its chat window in a cross-origin *.livechatinc.com iframe;
+        // Chromium WebView blocks third-party cookies by default, which would drop that
+        // iframe's session cookies. Enable them for this verification WebView only.
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
         setContentView(webView)
         webView.loadUrl(buildUrl(config))
 
@@ -226,6 +231,10 @@ internal class VerificationActivity : AppCompatActivity() {
             view: WebView,
             request: WebResourceRequest,
         ): Boolean {
+            // Sub-frame loads (e.g. the LiveChat support chat's cross-origin iframe on
+            // *.livechatinc.com) proceed in the WebView; only main-frame foreign nav
+            // opens the system browser.
+            if (!request.isForMainFrame) return false
             val url = request.url
             val sameOrigin = url.scheme == base.scheme && url.host == base.host
             if (sameOrigin) return false
