@@ -10,8 +10,10 @@ package com.finvasia.sentinel
  * @property hostedFlowBaseUrl Origin of the hosted verification flow. Defaults
  *   to the Finvasia test environment; override per environment / self-host.
  * @property theme Color scheme; [SentinelTheme.SYSTEM] follows the device.
- * @property locale Optional BCP-47 locale hint. Reserved — not yet consumed by
- *   the runtime.
+ * @property locale Optional BCP-47 language for the flow (e.g. "fr", "ar"). Sent
+ *   as `?locale=` on the WebView URL; the runtime applies it to the session at
+ *   bootstrap so the assistant AND all UI chrome render in this language. Omit to
+ *   use the session's own language (context.language / tenant default / English).
  */
 data class SentinelConfig(
     val sessionId: String,

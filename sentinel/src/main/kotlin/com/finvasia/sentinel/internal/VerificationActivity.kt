@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
@@ -20,6 +21,7 @@ import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
+import com.finvasia.sentinel.LiveChatRequest
 import com.finvasia.sentinel.SentinelConfig
 import com.finvasia.sentinel.SentinelEvent
 import com.finvasia.sentinel.SentinelOutcome
@@ -155,7 +157,9 @@ internal class VerificationActivity : AppCompatActivity() {
         @JavascriptInterface
         fun postMessage(json: String) {
             val message = runCatching { JSONObject(json) }.getOrNull() ?: return
-            when (message.optString("type")) {
+            val type = message.optString("type")
+            Log.i(TAG, "bridge message: $type")
+            when (type) {
                 "ready" -> runOnUiThread { emit(SentinelEvent.Ready) }
 
                 "complete" -> {
@@ -183,6 +187,19 @@ internal class VerificationActivity : AppCompatActivity() {
                     // User tapped "Done" on the terminal outcome screen. Report it and
                     // let the host dismiss — distinct from `cancel` (the flow finished).
                     runOnUiThread { emit(SentinelEvent.Closed) }
+                }
+
+                "live_chat" -> {
+                    // Non-terminal: hand the request to the host's onLiveChat callback so
+                    // it opens LiveChat natively. Routed SEPARATELY from emit() — it is
+                    // not a SentinelEvent, so the terminal-event bookkeeping is untouched
+                    // and the flow is never finished.
+                    val request = LiveChatRequest.fromJson(message)
+                    if (request != null) {
+                        runOnUiThread { SentinelRuntime.emitLiveChat(request) }
+                    } else {
+                        Log.w(TAG, "live_chat message received but could not be parsed")
+                    }
                 }
             }
         }
@@ -276,6 +293,7 @@ internal class VerificationActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val TAG = "Sentinel"
         private const val BRIDGE_NAME = "SentinelBridge"
 
         private const val EXTRA_SESSION_ID = "sentinel.sessionId"

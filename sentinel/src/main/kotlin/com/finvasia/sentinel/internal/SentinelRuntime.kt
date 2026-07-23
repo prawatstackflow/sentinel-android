@@ -3,6 +3,7 @@ package com.finvasia.sentinel.internal
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.finvasia.sentinel.LiveChatRequest
 import com.finvasia.sentinel.SentinelEvent
 import com.finvasia.sentinel.SentinelListener
 import java.lang.ref.WeakReference
@@ -23,11 +24,17 @@ internal object SentinelRuntime {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var listener: SentinelListener? = null
+    private var onLiveChat: ((LiveChatRequest) -> Unit)? = null
     private var activityRef: WeakReference<VerificationActivity>? = null
 
     /** Parks the host listener for the flow about to launch. */
     fun setListener(listener: SentinelListener) {
         this.listener = listener
+    }
+
+    /** Parks the host's optional LiveChat handler for the flow about to launch. */
+    fun setLiveChatHandler(handler: ((LiveChatRequest) -> Unit)?) {
+        this.onLiveChat = handler
     }
 
     /** Activity registers itself so [requestDismiss] can finish it. */
@@ -40,6 +47,7 @@ internal object SentinelRuntime {
         if (activityRef?.get() === activity) {
             activityRef = null
             listener = null
+            onLiveChat = null
         }
     }
 
@@ -51,6 +59,26 @@ internal object SentinelRuntime {
             target.onEvent(event)
         } else {
             mainHandler.post { target.onEvent(event) }
+        }
+    }
+
+    /**
+     * Forwards a non-terminal LiveChat request to the host's [onLiveChat] handler on
+     * the main thread. Not a [SentinelEvent] — never dismisses the flow.
+     */
+    fun emitLiveChat(request: LiveChatRequest) {
+        // Debug log — non-PII only (never log customerName/customerEmail).
+        Log.i(
+            TAG,
+            "live_chat request: license=${request.license} group=${request.group} " +
+                "forwardPii=${request.forwardPii} vars=${request.sessionVariables.size} " +
+                "handler=${onLiveChat != null}",
+        )
+        val target = onLiveChat ?: return
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            target(request)
+        } else {
+            mainHandler.post { target(request) }
         }
     }
 

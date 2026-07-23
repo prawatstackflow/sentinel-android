@@ -35,7 +35,10 @@ class MainActivity : AppCompatActivity() {
     private var session: SentinelSession? = null
 
     private fun launch(config: SentinelConfig) {
-        session = Sentinel.launch(this, config) { event ->
+        session = Sentinel.launch(
+            context = this,
+            config = config,
+            listener = { event ->
             when (event) {
                 SentinelEvent.Ready -> resultView.text = "Status: ready"
                 is SentinelEvent.Completed -> {
@@ -66,7 +69,16 @@ class MainActivity : AppCompatActivity() {
                     session?.dismiss()
                 }
             }
-        }
+            },
+            onLiveChat = { request ->
+                // Non-terminal: the flow stays open. A real host opens LiveChat's
+                // Android SDK here with request.license / .group / .sessionVariables
+                // (and, when request.forwardPii, request.customerName / .customerEmail).
+                // The demo just shows it fired.
+                resultView.text =
+                    "LiveChat requested — license ${request.license}, group ${request.group}"
+            },
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -27,6 +27,12 @@ import com.finvasia.sentinel.internal.VerificationActivity
  *
  * The system-back gesture is the one exception: it emits [SentinelEvent.Cancelled]
  * and finishes, so the user is never trapped.
+ *
+ * [onLiveChat] (optional) is invoked when the user taps "Chat with support" inside
+ * the flow. It is a **non-terminal** request — the flow stays open — asking the
+ * host to open LiveChat natively with the supplied [LiveChatRequest] (license/group
+ * + session context). Omit it to leave the support button inert on native (the
+ * hosted flow does not open LiveChat in-WebView).
  */
 object Sentinel {
     /**
@@ -38,8 +44,10 @@ object Sentinel {
         context: Context,
         config: SentinelConfig,
         listener: SentinelListener,
+        onLiveChat: ((LiveChatRequest) -> Unit)? = null,
     ): SentinelSession {
         SentinelRuntime.setListener(listener)
+        SentinelRuntime.setLiveChatHandler(onLiveChat)
         context.startActivity(VerificationActivity.intent(context, config))
         return object : SentinelSession {
             override fun dismiss() = SentinelRuntime.requestDismiss()
